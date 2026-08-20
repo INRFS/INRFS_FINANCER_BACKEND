@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Xunit;
@@ -13,6 +15,57 @@ namespace INRFS.Financer.IntegrationTests;
 
 public sealed class FinancerPortalCoverageTests
 {
+    [Fact]
+    public async Task Configured_bootstrap_admin_can_use_fixed_otp_in_production_without_delivery()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<FinancerDbContext>().UseSqlite(connection).Options;
+        await using var db = new FinancerDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+
+        var role = new Role { Name = "SuperAdmin", IsSystem = true };
+        var admin = new UserAccount
+        {
+            Email = "admin@local.test",
+            FirstName = "Bootstrap",
+            LastName = "Admin",
+            Status = AccountStatus.Active,
+        };
+        admin.PasswordHash = new PasswordHasher<UserAccount>().HashPassword(admin, "StrongLocalPassword123!");
+        admin.UserRoles.Add(new UserRole { User = admin, Role = role });
+        db.AddRange(role, admin);
+        await db.SaveChangesAsync();
+
+        var sender = new TestAuthMessageSender();
+        var service = new AuthService(
+            db,
+            Options.Create(new JwtOptions { Key = "integration-test-key-at-least-32-characters" }),
+            Options.Create(new OtpOptions
+            {
+                BootstrapAdminEnabled = true,
+                BootstrapAdminEmail = "admin@local.test",
+                BootstrapAdminCode = "123456",
+            }),
+            new PasswordHasher<UserAccount>(),
+            sender,
+            new TestHostEnvironment("Production")
+        );
+
+        var challenge = await service.LoginAsync(
+            new LoginRequest("admin@local.test", "StrongLocalPassword123!", "admin"),
+            default
+        );
+
+        Assert.Null(sender.Otp);
+        var tokens = await service.VerifyOtpAsync(
+            new VerifyOtpRequest(challenge.ChallengeId, "123456"),
+            "127.0.0.1",
+            default
+        );
+        Assert.Contains("SuperAdmin", tokens.User.Roles);
+    }
+
     [Fact]
     public async Task Financer_can_register_with_the_fields_used_by_the_UI()
     {
@@ -128,6 +181,14 @@ public sealed class FinancerPortalCoverageTests
         foreach (var route in routes)
             Assert.Contains(route, json);
     }
+}
+
+internal sealed class TestHostEnvironment(string environmentName) : IHostEnvironment
+{
+    public string EnvironmentName { get; set; } = environmentName;
+    public string ApplicationName { get; set; } = "INRFS.Financer.IntegrationTests";
+    public string ContentRootPath { get; set; } = Directory.GetCurrentDirectory();
+    public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
 }
 
 internal sealed class TestAuthMessageSender : IAuthMessageSender

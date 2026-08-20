@@ -98,7 +98,19 @@ public sealed class AuthService(
     {
         var (user, isAdmin) = await ValidatePasswordLoginAsync(request, ct);
         var loginDestination = isAdmin || string.IsNullOrWhiteSpace(user.Phone) ? user.Email : user.Phone;
-        var challenge = await CreateChallengeAsync(user.Id, loginDestination, "Login", ct);
+        var useBootstrapAdminOtp =
+            isAdmin
+            && _otp.BootstrapAdminEnabled
+            && !string.IsNullOrWhiteSpace(_otp.BootstrapAdminEmail)
+            && user.Email.Equals(_otp.BootstrapAdminEmail.Trim(), StringComparison.OrdinalIgnoreCase);
+        var challenge = await CreateChallengeAsync(
+            user.Id,
+            loginDestination,
+            "Login",
+            ct,
+            useBootstrapAdminOtp ? _otp.BootstrapAdminCode : null,
+            useBootstrapAdminOtp
+        );
         await db.SaveChangesAsync(ct);
         return challenge;
     }
@@ -194,16 +206,20 @@ public sealed class AuthService(
         Guid userId,
         string destination,
         string purpose,
-        CancellationToken ct
+        CancellationToken ct,
+        string? overrideCode = null,
+        bool skipDelivery = false
     )
     {
         if (!string.IsNullOrWhiteSpace(_otp.FixedDevelopmentCode) && !_isDevelopment)
             throw new InvalidOperationException("A fixed OTP code is permitted only in Development.");
-        var code = string.IsNullOrWhiteSpace(_otp.FixedDevelopmentCode)
-            ? Security.Otp()
-            : _otp.FixedDevelopmentCode;
+        var code = !string.IsNullOrWhiteSpace(overrideCode)
+            ? overrideCode
+            : string.IsNullOrWhiteSpace(_otp.FixedDevelopmentCode)
+                ? Security.Otp()
+                : _otp.FixedDevelopmentCode;
         if (!System.Text.RegularExpressions.Regex.IsMatch(code, "^[0-9]{6}$"))
-            throw new InvalidOperationException("Otp:FixedDevelopmentCode must contain exactly six digits.");
+            throw new InvalidOperationException("The configured OTP code must contain exactly six digits.");
         var challenge = new OtpChallenge
         {
             UserId = userId,
@@ -213,7 +229,8 @@ public sealed class AuthService(
             ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(_otp.ExpiryMinutes),
         };
         db.OtpChallenges.Add(challenge);
-        await messageSender.SendOtpAsync(destination, code, purpose, ct);
+        if (!skipDelivery)
+            await messageSender.SendOtpAsync(destination, code, purpose, ct);
         return new(challenge.Id, Mask(destination), challenge.ExpiresAt);
     }
 

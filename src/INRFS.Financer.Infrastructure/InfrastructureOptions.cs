@@ -15,6 +15,9 @@ public sealed class OtpOptions
     public int MaximumAttempts { get; set; } = 5;
     public int MinimumResendSeconds { get; set; } = 60;
     public string? FixedDevelopmentCode { get; set; }
+    public bool BootstrapAdminEnabled { get; set; }
+    public string? BootstrapAdminEmail { get; set; }
+    public string? BootstrapAdminCode { get; set; }
 }
 
 public sealed class AuthDeliveryOptions
