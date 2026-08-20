@@ -91,10 +91,12 @@ builder.Services.AddSwaggerGen(o =>
 });
 builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
 var swaggerPublicBaseUrl = builder.Configuration["Swagger:PublicBaseUrl"]?.TrimEnd('/');
+var swaggerEnabled = builder.Environment.IsDevelopment()
+    || builder.Configuration.GetValue<bool>("Swagger:Enabled");
 var app = builder.Build();
 app.UseMiddleware<CorrelationMiddleware>();
 app.UseMiddleware<ExceptionMiddleware>();
-if (app.Environment.IsDevelopment())
+if (swaggerEnabled)
 {
     app.UseSwagger(options =>
     {
