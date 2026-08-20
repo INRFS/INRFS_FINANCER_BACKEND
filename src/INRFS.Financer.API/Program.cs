@@ -90,12 +90,22 @@ builder.Services.AddSwaggerGen(o =>
     );
 });
 builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
+var swaggerPublicBaseUrl = builder.Configuration["Swagger:PublicBaseUrl"]?.TrimEnd('/');
 var app = builder.Build();
 app.UseMiddleware<CorrelationMiddleware>();
 app.UseMiddleware<ExceptionMiddleware>();
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
+    app.UseSwagger(options =>
+    {
+        if (!string.IsNullOrWhiteSpace(swaggerPublicBaseUrl))
+        {
+            options.PreSerializeFilters.Add((document, _) =>
+            {
+                document.Servers = [new OpenApiServer { Url = swaggerPublicBaseUrl }];
+            });
+        }
+    });
     app.UseSwaggerUI();
 }
 else
