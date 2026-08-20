@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="src/INRFS.Financer.Domain/INRFS.Financer.Domain.csproj" />
+  <Project Path="src/INRFS.Financer.Application/INRFS.Financer.Application.csproj" />
+  <Project Path="src/INRFS.Financer.Infrastructure/INRFS.Financer.Infrastructure.csproj" />
+  <Project Path="src/INRFS.Financer.API/INRFS.Financer.API.csproj" />
+  <Project Path="tests/INRFS.Financer.UnitTests/INRFS.Financer.UnitTests.csproj" />
+  <Project Path="tests/INRFS.Financer.IntegrationTests/INRFS.Financer.IntegrationTests.csproj" />
+</Solution>

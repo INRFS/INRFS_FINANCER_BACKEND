@@ -1,0 +1,442 @@
+@baseUrl = http://localhost:5187/api/v1
+@token = paste-access-token
+@refreshToken = paste-refresh-token
+@challengeId = 00000000-0000-0000-0000-000000000000
+@financerId = 00000000-0000-0000-0000-000000000000
+@userId = 00000000-0000-0000-0000-000000000000
+@roleId = 00000000-0000-0000-0000-000000000000
+@customerId = 00000000-0000-0000-0000-000000000000
+@kycId = 00000000-0000-0000-0000-000000000000
+@documentId = 00000000-0000-0000-0000-000000000000
+@productId = 00000000-0000-0000-0000-000000000000
+@applicationId = 00000000-0000-0000-0000-000000000000
+@loanId = 00000000-0000-0000-0000-000000000000
+@scheduleId = 00000000-0000-0000-0000-000000000000
+@paymentId = 00000000-0000-0000-0000-000000000000
+@transactionId = 00000000-0000-0000-0000-000000000000
+@ticketId = 00000000-0000-0000-0000-000000000000
+@invoiceId = 00000000-0000-0000-0000-000000000000
+@planId = 00000000-0000-0000-0000-000000000000
+
+### Health / Swagger
+GET http://localhost:5187/health/live
+###
+GET http://localhost:5187/health/ready
+###
+GET http://localhost:5187/swagger/v1/swagger.json
+
+### Authentication
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{"email":"admin@local.test","password":"StrongLocalPassword123!","portal":"admin"}
+###
+POST {{baseUrl}}/auth/otp/request
+Content-Type: application/json
+
+{"destination":"admin@local.test","purpose":"Login"}
+###
+POST {{baseUrl}}/auth/otp/verify
+Content-Type: application/json
+
+{"challengeId":"{{challengeId}}","code":"000000"}
+###
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{"refreshToken":"{{refreshToken}}"}
+###
+POST {{baseUrl}}/auth/password/forgot
+Content-Type: application/json
+
+{"email":"admin@local.test"}
+###
+POST {{baseUrl}}/auth/password/reset
+Content-Type: application/json
+
+{"token":"paste-reset-token","newPassword":"NewStrongPassword123!","confirmPassword":"NewStrongPassword123!"}
+###
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/auth/revoke
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"refreshToken":"{{refreshToken}}"}
+
+### Financers / users / roles
+GET {{baseUrl}}/financers?page=1&pageSize=20&search=
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/financers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"legalName":"Example Finance Private Limited","displayName":"Example Finance","ownerName":"Example Owner","email":"owner@example.test","phone":"+919876543210","addressLine":"1 Main Road","city":"Ahmedabad","state":"Gujarat","postalCode":"380001","taxNumber":"GSTINEXAMPLE","registrationNumber":"REG-EXAMPLE","serviceChargePercentage":1.0}
+###
+POST {{baseUrl}}/financers/{{financerId}}/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"status":"Active","reason":"KYC and onboarding approved"}
+###
+GET {{baseUrl}}/financers/{{financerId}}/usage
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/users?page=1&pageSize=20
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"financerId":"{{financerId}}","firstName":"Loan","lastName":"Officer","email":"officer@example.test","phone":"+919876543211","password":"StrongPassword123!","roleIds":["{{roleId}}"]}
+###
+PUT {{baseUrl}}/users/{{userId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"firstName":"Updated","lastName":"Officer","phone":"+919876543211","status":"Active"}
+###
+PUT {{baseUrl}}/users/{{userId}}/roles
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+["{{roleId}}"]
+###
+DELETE {{baseUrl}}/users/{{userId}}
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/admins
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/employees
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/roles
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/roles
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name":"CustomReviewer","description":"Custom review role","permissionIds":[]}
+
+### Customers / KYC / documents
+GET {{baseUrl}}/customers?page=1&pageSize=20&search=
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/customers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"financerId":"{{financerId}}","fullName":"Ramesh Kumar","dateOfBirth":"1985-03-15","gender":"Male","phone":"+919800111111","email":"ramesh@example.test","addressLine1":"12 MG Road","addressLine2":"Andheri West","city":"Mumbai","state":"Maharashtra","postalCode":"400001","aadhaar":"123456789012","pan":"ABCDE1234F"}
+###
+GET {{baseUrl}}/customers/{{customerId}}
+Authorization: Bearer {{token}}
+###
+PUT {{baseUrl}}/customers/{{customerId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"fullName":"Ramesh Kumar","dateOfBirth":"1985-03-15","gender":"Male","phone":"+919800111111","email":"ramesh@example.test","addressLine1":"12 MG Road","addressLine2":"Andheri West","city":"Mumbai","state":"Maharashtra","postalCode":"400001","status":"Active"}
+###
+POST {{baseUrl}}/customers/{{customerId}}/notes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"text":"Customer supplied updated income evidence."}
+###
+GET {{baseUrl}}/customers/{{customerId}}/ledger
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/kyc?status=Submitted
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/kyc
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"customerId":"{{customerId}}","identityType":"PAN","identityNumber":"ABCDE1234F","declaredName":"Ramesh Kumar","declaredDateOfBirth":"1985-03-15"}
+###
+POST {{baseUrl}}/kyc/{{kycId}}/decision
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"status":"Verified","notes":"Document and identity matched."}
+### Upload document (replace path)
+POST {{baseUrl}}/documents
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="category"
+
+PAN
+--boundary
+Content-Disposition: form-data; name="customerId"
+
+{{customerId}}
+--boundary
+Content-Disposition: form-data; name="file"; filename="sample.pdf"
+Content-Type: application/pdf
+
+< ./sample.pdf
+--boundary--
+###
+GET {{baseUrl}}/documents/{{documentId}}
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/documents/{{documentId}}/content
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/documents/{{documentId}}/verify
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"status":"Verified","notes":"Readable and valid."}
+###
+DELETE {{baseUrl}}/documents/{{documentId}}
+Authorization: Bearer {{token}}
+
+### Products / eligibility / loan workflow
+GET {{baseUrl}}/loan-products
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/loan-products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"code":"PERSONAL12","name":"Personal Loan","minimumPrincipal":10000,"maximumPrincipal":500000,"minimumTenureMonths":3,"maximumTenureMonths":36,"annualInterestRate":18,"interestMethod":"ReducingBalance","repaymentFrequency":"Monthly","processingFeePercentage":1,"lateFeePercentage":2,"minimumAge":21,"maximumAgeAtMaturity":65,"maximumFoirPercentage":50,"isActive":true}
+###
+PUT {{baseUrl}}/loan-products/{{productId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"code":"PERSONAL12","name":"Personal Loan","minimumPrincipal":10000,"maximumPrincipal":600000,"minimumTenureMonths":3,"maximumTenureMonths":36,"annualInterestRate":18,"interestMethod":"ReducingBalance","repaymentFrequency":"Monthly","processingFeePercentage":1,"lateFeePercentage":2,"minimumAge":21,"maximumAgeAtMaturity":65,"maximumFoirPercentage":50,"isActive":true}
+###
+POST {{baseUrl}}/eligibility/checks
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"customerId":"{{customerId}}","loanProductId":"{{productId}}","requestedAmount":100000,"tenureMonths":12,"monthlyIncome":50000,"monthlyObligations":5000}
+###
+GET {{baseUrl}}/loan-applications?page=1&pageSize=20
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/loan-applications
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"customerId":"{{customerId}}","loanProductId":"{{productId}}","requestedPrincipal":100000,"requestedTenureMonths":12,"purpose":"Business working capital","monthlyIncome":50000,"monthlyObligations":5000}
+###
+GET {{baseUrl}}/loan-applications/{{applicationId}}
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/loan-applications/{{applicationId}}/history
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/loan-applications/{{applicationId}}/submit
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/loan-applications/{{applicationId}}/verify
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/loan-applications/{{applicationId}}/approve
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"approvedPrincipal":100000,"approvedAnnualRate":18,"approvedTenureMonths":12,"notes":"Approved within policy."}
+###
+POST {{baseUrl}}/loan-applications/{{applicationId}}/reject
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"reasonCode":"POLICY","notes":"Application does not meet policy."}
+###
+POST {{baseUrl}}/loan-applications/{{applicationId}}/disburse
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"amount":100000,"disbursementDate":"2026-08-12","mode":"BankTransfer","bankReference":"UTR-EXAMPLE-001"}
+###
+GET {{baseUrl}}/loans?page=1&pageSize=20
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/loans/{{loanId}}
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/loans/{{loanId}}/schedule
+Authorization: Bearer {{token}}
+
+### Payments / transactions / collections
+GET {{baseUrl}}/payments?page=1&pageSize=20
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/payments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"loanId":"{{loanId}}","paymentScheduleId":"{{scheduleId}}","amount":9168,"receivedAt":"2026-08-12T10:00:00Z","mode":"Upi","externalReference":"UPI-EXAMPLE-001","notes":"Received in full."}
+###
+GET {{baseUrl}}/payments/{{paymentId}}
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/payments/{{paymentId}}/reverse
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"reason":"Bank reversal confirmed."}
+###
+POST {{baseUrl}}/payment-schedules/{{scheduleId}}/reschedule
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"newDueDate":"2026-09-30","reason":"Documented customer request."}
+###
+GET {{baseUrl}}/transactions?page=1&pageSize=20
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/transactions/{{transactionId}}/reconcile
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"externalReference":"BANK-STMT-001"}
+###
+GET {{baseUrl}}/collections?page=1&pageSize=20
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/overdue-loans?page=1&pageSize=20
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/collections/{{loanId}}/actions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"type":"Reminder","notes":"SMS reminder sent.","promiseToPayDate":"2026-08-20","status":"Contacted"}
+
+### Dashboard / notifications / support
+GET {{baseUrl}}/dashboard/financer
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/dashboard/admin?from=2026-08-01&to=2026-08-31
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/notifications?status=unread
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/notifications
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"financerId":"{{financerId}}","title":"Payment due","message":"A scheduled payment is due.","type":"Reminder","channel":"InApp","entityType":"Loan","entityId":"{{loanId}}"}
+###
+POST {{baseUrl}}/notifications/{{documentId}}/read
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/notifications/read-all
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/support-tickets?page=1&pageSize=20
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/support-tickets
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"subject":"Report export issue","category":"Technical","priority":"Medium","description":"Collection report export failed."}
+###
+GET {{baseUrl}}/support-tickets/{{ticketId}}
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/support-tickets/{{ticketId}}/messages
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"message":"Please provide the correlation ID.","isInternal":false}
+###
+POST {{baseUrl}}/support-tickets/{{ticketId}}/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"status":"InProgress","assignedTo":"{{userId}}"}
+
+### Reports / settings / audit / commercial modules
+GET {{baseUrl}}/reports/portfolio?format=json
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/reports/collections?format=csv
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/reports/payments?format=json
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/reports/overdue?format=json
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/reports/customers?format=json
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/reports/service-charges?format=json
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/reports/audit?format=json
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/settings?scope=Platform
+Authorization: Bearer {{token}}
+###
+PUT {{baseUrl}}/settings/Platform/ServiceChargePercentage
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"value":"1.0","valueType":"Decimal","description":"Default platform service charge percentage","isSecret":false,"expectedVersion":null}
+###
+GET {{baseUrl}}/audit-logs?page=1&pageSize=20
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/audit-logs/1
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/service-charges/invoices
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/service-charges/invoices/generate
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"financerId":"{{financerId}}","periodStart":"2026-08-01","periodEnd":"2026-08-31","dueDate":"2026-09-10"}
+###
+POST {{baseUrl}}/service-charges/invoices/{{invoiceId}}/collect
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"amount":1000,"reference":"BANK-FEE-001"}
+###
+GET {{baseUrl}}/monthly-billing
+Authorization: Bearer {{token}}
+###
+GET {{baseUrl}}/subscriptions
+Authorization: Bearer {{token}}
+###
+POST {{baseUrl}}/subscriptions/plans
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"code":"PRO","name":"Professional","monthlyPrice":4999,"customerLimit":10000,"loanLimit":10000,"smsCredits":5000,"features":["Reports","Priority support"],"isActive":true}
+###
+PUT {{baseUrl}}/subscriptions/plans/{{planId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"code":"PRO","name":"Professional","monthlyPrice":5499,"customerLimit":12000,"loanLimit":12000,"smsCredits":6000,"features":["Reports","Priority support"],"isActive":true}
+###
+POST {{baseUrl}}/subscriptions/assign
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"financerId":"{{financerId}}","planId":"{{planId}}","startsOn":"2026-08-01","endsOn":null}
+###
+GET {{baseUrl}}/sms-management/usage?from=2026-08-01&to=2026-08-31
+Authorization: Bearer {{token}}
