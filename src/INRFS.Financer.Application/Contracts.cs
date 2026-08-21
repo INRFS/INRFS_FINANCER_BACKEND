@@ -389,7 +389,18 @@ public sealed record RecordPaymentRequest(
     DateTimeOffset ReceivedAt,
     PaymentMode Mode,
     string? ExternalReference,
-    string? Notes
+    string? Notes,
+    LoanPaymentType PaymentType = LoanPaymentType.Regular
+);
+
+public sealed record SettlementQuoteDto(
+    Guid LoanId,
+    DateOnly SettlementDate,
+    decimal PrincipalOutstanding,
+    decimal AccruedInterest,
+    decimal FeesOutstanding,
+    decimal FutureInterestWaived,
+    decimal SettlementAmount
 );
 
 public sealed record PaymentDto(
@@ -675,6 +686,7 @@ public interface IPlatformService
         CancellationToken ct
     );
     Task<PaymentDto> GetPaymentAsync(Guid id, CurrentUser actor, CancellationToken ct);
+    Task<SettlementQuoteDto> GetSettlementQuoteAsync(Guid loanId, DateOnly settlementDate, CurrentUser actor, CancellationToken ct);
     Task<PaymentDto> RecordPaymentAsync(
         RecordPaymentRequest request,
         CurrentUser actor,

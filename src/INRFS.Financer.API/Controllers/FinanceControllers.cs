@@ -24,6 +24,13 @@ public sealed class PaymentsController(IPlatformService service, ICurrentUserAcc
         CancellationToken ct
     ) => OkResult(await service.RecordPaymentAsync(r, user.User, ct));
 
+    [HttpGet("settlement-quote/{loanId:guid}")]
+    public async Task<ActionResult<ApiResult<SettlementQuoteDto>>> SettlementQuote(
+        Guid loanId,
+        [FromQuery] DateOnly date,
+        CancellationToken ct
+    ) => OkResult(await service.GetSettlementQuoteAsync(loanId, date, user.User, ct));
+
     [
         Authorize(Roles = "SuperAdmin,Admin,FinanceOfficer,FinancerOwner"),
         HttpPost("{id:guid}/reverse")

@@ -106,6 +106,8 @@ public enum InterestRateBasis { PerAnnum, PerMonth, PerWeek, PerDay }
 
 public enum InterestCollectionFrequency { Daily, Weekly, Monthly, AtMaturity }
 
+public enum LoanPaymentType { InterestOnly, Regular, FullSettlement }
+
 public enum CollectionStatus
 {
     Open,

@@ -1697,6 +1697,23 @@ public sealed class PlatformService(
         return Map(x);
     }
 
+    public async Task<SettlementQuoteDto> GetSettlementQuoteAsync(
+        Guid loanId,
+        DateOnly settlementDate,
+        CurrentUser actor,
+        CancellationToken ct
+    )
+    {
+        Require(actor, "payments.read");
+        var loan = await db.Loans.Include(x => x.Schedules).AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == loanId, ct)
+            ?? throw new DomainException("Loan not found.", 404);
+        RequireTenant(loan.FinancerId, actor);
+        if (loan.Status is LoanStatus.Closed or LoanStatus.WrittenOff or LoanStatus.Cancelled)
+            throw new DomainException("A settlement quote is not available for this loan status.", 409);
+        return BuildSettlementQuote(loan, settlementDate);
+    }
+
     public async Task<PaymentDto> RecordPaymentAsync(
         RecordPaymentRequest r,
         CurrentUser actor,
@@ -1719,6 +1736,31 @@ public sealed class PlatformService(
         var scheduleOutstanding = schedules.Sum(x =>
             Math.Max(0, x.PrincipalDue + x.InterestDue + x.FeesDue - x.AmountPaid)
         );
+        if (r.PaymentType == LoanPaymentType.FullSettlement)
+        {
+            var settlementDate = DateOnly.FromDateTime(r.ReceivedAt.UtcDateTime);
+            var quote = BuildSettlementQuote(loan, settlementDate);
+            if (Math.Abs(r.Amount - quote.SettlementAmount) > 0.01m)
+                throw new DomainException($"Settlement amount changed. The current quote is â‚¹{quote.SettlementAmount:N2}.", 409);
+
+            foreach (var schedule in schedules)
+            {
+                var earnedInterest = EarnedInterestThrough(schedule, settlementDate);
+                var interestAlreadyPaid = Math.Min(schedule.InterestDue, Math.Max(0, schedule.AmountPaid - schedule.FeesDue));
+                schedule.InterestDue = Math.Max(interestAlreadyPaid, earnedInterest);
+            }
+            loan.InterestOutstanding = quote.AccruedInterest;
+            scheduleOutstanding = schedules.Sum(x => Math.Max(0, x.PrincipalDue + x.InterestDue + x.FeesDue - x.AmountPaid));
+        }
+        else if (r.PaymentType == LoanPaymentType.InterestOnly)
+        {
+            if (loan.FeesOutstanding > 0)
+                throw new DomainException("Outstanding fees must be cleared with a regular payment before an interest-only payment.", 409);
+            var interestAvailable = schedules.Sum(s => Math.Max(0, s.InterestDue - Math.Max(0, s.AmountPaid - s.FeesDue)));
+            if (r.Amount > interestAvailable)
+                throw new DomainException("Payment exceeds the outstanding interest amount.");
+            scheduleOutstanding = interestAvailable;
+        }
         if (r.Amount > scheduleOutstanding)
             throw new DomainException("Payment exceeds the total outstanding amount.");
         if (
@@ -1756,7 +1798,7 @@ public sealed class PlatformService(
         foreach (var s in schedules.Where(_ => remaining > 0))
         {
             var existing = s.AmountPaid;
-            var feePaid = Math.Min(remaining, Math.Max(0, s.FeesDue - existing));
+            var feePaid = r.PaymentType == LoanPaymentType.InterestOnly ? 0 : Math.Min(remaining, Math.Max(0, s.FeesDue - existing));
             remaining -= feePaid;
             existing += feePaid;
             var interestPaid = Math.Min(
@@ -1765,7 +1807,7 @@ public sealed class PlatformService(
             );
             remaining -= interestPaid;
             existing += interestPaid;
-            var principalPaid = Math.Min(
+            var principalPaid = r.PaymentType == LoanPaymentType.InterestOnly ? 0 : Math.Min(
                 remaining,
                 Math.Max(0, s.PrincipalDue + s.InterestDue + s.FeesDue - existing)
             );
@@ -1831,6 +1873,8 @@ public sealed class PlatformService(
             && loan.FeesOutstanding == 0
         )
             loan.Status = LoanStatus.Closed;
+        else if (r.PaymentType == LoanPaymentType.FullSettlement)
+            throw new DomainException("The settlement payment did not clear the loan.", 409);
         db.Payments.Add(payment);
         db.Notifications.Add(
             new Notification
@@ -3495,5 +3539,35 @@ public sealed class PlatformService(
             periodStart = due;
         }
         loan.InterestOutstanding = totalInterest;
+    }
+
+    private static SettlementQuoteDto BuildSettlementQuote(Loan loan, DateOnly settlementDate)
+    {
+        var accruedInterest = loan.Schedules.Sum(schedule =>
+        {
+            var earned = EarnedInterestThrough(schedule, settlementDate);
+            var paid = Math.Min(schedule.InterestDue, Math.Max(0, schedule.AmountPaid - schedule.FeesDue));
+            return Math.Max(0, earned - paid);
+        });
+        accruedInterest = Math.Round(accruedInterest, 2);
+        var futureInterestWaived = Math.Max(0, loan.InterestOutstanding - accruedInterest);
+        var amount = loan.PrincipalOutstanding + accruedInterest + loan.FeesOutstanding;
+        return new SettlementQuoteDto(
+            loan.Id,
+            settlementDate,
+            loan.PrincipalOutstanding,
+            accruedInterest,
+            loan.FeesOutstanding,
+            Math.Round(futureInterestWaived, 2),
+            Math.Round(amount, 2)
+        );
+    }
+
+    private static decimal EarnedInterestThrough(PaymentSchedule schedule, DateOnly date)
+    {
+        if (date <= schedule.PeriodStart) return 0;
+        if (date >= schedule.PeriodEnd || schedule.InterestDays <= 0) return schedule.InterestDue;
+        var elapsedDays = date.DayNumber - schedule.PeriodStart.DayNumber;
+        return Math.Round(schedule.InterestDue * elapsedDays / schedule.InterestDays, 2);
     }
 }
