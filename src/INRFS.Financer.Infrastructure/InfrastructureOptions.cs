@@ -23,6 +23,13 @@ public sealed class OtpOptions
 public sealed class AuthDeliveryOptions
 {
     public string Provider { get; set; } = "Development";
+    public string? SmtpHost { get; set; }
+    public int SmtpPort { get; set; } = 587;
+    public bool SmtpEnableSsl { get; set; } = true;
+    public string? SmtpUsername { get; set; }
+    public string? SmtpPassword { get; set; }
+    public string? SmtpFrom { get; set; }
+    public string SmtpFromName { get; set; } = "INRFS Financer";
     public string? WebhookUrl { get; set; }
     public string? ApiKey { get; set; }
     public string PasswordResetUrl { get; set; } = "http://localhost:5173/reset-password";

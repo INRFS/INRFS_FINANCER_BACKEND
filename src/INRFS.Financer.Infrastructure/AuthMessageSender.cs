@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Net;
+using System.Net.Mail;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -33,6 +35,11 @@ public sealed class AuthMessageSender(
 
     private async Task SendAsync(string destination, string type, object payload, CancellationToken ct)
     {
+        if (_options.Provider.Equals("Smtp", StringComparison.OrdinalIgnoreCase))
+        {
+            await SendSmtpAsync(destination, type, payload, ct);
+            return;
+        }
         if (_options.Provider.Equals("Development", StringComparison.OrdinalIgnoreCase))
         {
             if (!environment.IsDevelopment())
@@ -60,4 +67,39 @@ public sealed class AuthMessageSender(
         using var response = await httpClient.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
     }
+
+    private async Task SendSmtpAsync(string destination, string type, object payload, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(_options.SmtpHost) || string.IsNullOrWhiteSpace(_options.SmtpFrom))
+            throw new InvalidOperationException("SMTP auth delivery requires SmtpHost and SmtpFrom.");
+
+        var (subject, body) = type switch
+        {
+            "Otp" => ("Your INRFS verification code", $"Your INRFS verification code is {Read(payload, "code")}. It expires soon."),
+            "PasswordReset" => ("Reset your INRFS password", $"Use this password reset token: {Read(payload, "token")}"),
+            "WelcomeCredentials" => ("Welcome to INRFS", $"Your INRFS account is ready. User ID: {Read(payload, "userId")}. Temporary password: {Read(payload, "password")}"),
+            _ => ("INRFS notification", JsonSerializer.Serialize(payload))
+        };
+
+        using var message = new MailMessage
+        {
+            From = new MailAddress(_options.SmtpFrom, _options.SmtpFromName),
+            Subject = subject,
+            Body = body,
+            IsBodyHtml = false,
+        };
+        message.To.Add(destination);
+        using var client = new SmtpClient(_options.SmtpHost, _options.SmtpPort)
+        {
+            EnableSsl = _options.SmtpEnableSsl,
+            DeliveryMethod = SmtpDeliveryMethod.Network,
+        };
+        if (!string.IsNullOrWhiteSpace(_options.SmtpUsername))
+            client.Credentials = new NetworkCredential(_options.SmtpUsername, _options.SmtpPassword);
+        ct.ThrowIfCancellationRequested();
+        await client.SendMailAsync(message, ct);
+    }
+
+    private static string Read(object payload, string property) =>
+        payload.GetType().GetProperty(property)?.GetValue(payload)?.ToString() ?? "";
 }

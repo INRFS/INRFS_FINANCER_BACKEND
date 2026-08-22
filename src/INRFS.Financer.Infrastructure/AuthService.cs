@@ -51,7 +51,7 @@ public sealed class AuthService(
             existing.Financer.OwnerName = request.FullName.Trim();
             existing.Financer.City = request.City.Trim();
             existing.Financer.State = request.State.Trim();
-            var retryChallenge = await CreateChallengeAsync(existing.Id, mobile, "Registration", ct);
+            var retryChallenge = await CreateChallengeAsync(existing.Id, email, "Registration", ct);
             await db.SaveChangesAsync(ct);
             return retryChallenge;
         }
@@ -89,7 +89,7 @@ public sealed class AuthService(
         user.PasswordHash = passwordHasher.HashPassword(user, Security.Token());
         user.UserRoles.Add(new UserRole { User = user, Role = ownerRole });
         db.AddRange(financer, user);
-        var challenge = await CreateChallengeAsync(user.Id, mobile, "Registration", ct);
+        var challenge = await CreateChallengeAsync(user.Id, email, "Registration", ct);
         await db.SaveChangesAsync(ct);
         return challenge;
     }
@@ -97,7 +97,8 @@ public sealed class AuthService(
     public async Task<AuthChallengeResponse> LoginAsync(LoginRequest request, CancellationToken ct)
     {
         var (user, isAdmin) = await ValidatePasswordLoginAsync(request, ct);
-        var loginDestination = isAdmin || string.IsNullOrWhiteSpace(user.Phone) ? user.Email : user.Phone;
+        // OTP is delivered by email for both admin and financer authentication.
+        var loginDestination = user.Email;
         var useBootstrapAdminOtp =
             isAdmin
             && _otp.BootstrapAdminEnabled
@@ -197,7 +198,7 @@ public sealed class AuthService(
             && last.CreatedAt.AddSeconds(_otp.MinimumResendSeconds) > DateTimeOffset.UtcNow
         )
             throw new DomainException("Please wait before requesting another code.", 429);
-        var response = await CreateChallengeAsync(user.Id, destination, request.Purpose, ct);
+        var response = await CreateChallengeAsync(user.Id, user.Email, request.Purpose, ct);
         await db.SaveChangesAsync(ct);
         return response;
     }
