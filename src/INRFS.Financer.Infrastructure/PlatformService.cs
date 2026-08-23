@@ -41,6 +41,40 @@ public sealed class PlatformService(
             throw new DomainException("Permission denied.", 403);
     }
 
+    private async Task NotifyPlatformAdminsAsync(
+        string title,
+        string message,
+        string type,
+        string entityType,
+        Guid entityId,
+        CurrentUser actor,
+        CancellationToken ct
+    )
+    {
+        var adminIds = await db.Users
+            .AsNoTracking()
+            .Where(user =>
+                user.FinancerId == null
+                && user.Status == AccountStatus.Active
+                && user.UserRoles.Any(userRole =>
+                    userRole.Role.Name == "SuperAdmin" || userRole.Role.Name == "Admin"))
+            .Select(user => user.Id)
+            .ToListAsync(ct);
+
+        db.Notifications.AddRange(adminIds.Select(adminId => new Notification
+        {
+            UserId = adminId,
+            Title = title,
+            Message = message,
+            Type = type,
+            Channel = NotificationChannel.InApp,
+            EntityType = entityType,
+            EntityId = entityId,
+            SentAt = DateTimeOffset.UtcNow,
+            CreatedBy = actor.UserId,
+        }));
+    }
+
     private string DataKey =>
         configuration["DataProtection:Key"]
         ?? throw new InvalidOperationException("DataProtection:Key is required.");
@@ -1167,6 +1201,19 @@ public sealed class PlatformService(
             CreatedBy = actor.UserId,
         };
         db.LoanApplications.Add(x);
+        var financerName = await db.Financers.AsNoTracking()
+            .Where(financer => financer.Id == customer.FinancerId)
+            .Select(financer => financer.DisplayName)
+            .SingleAsync(ct);
+        await NotifyPlatformAdminsAsync(
+            "New loan application",
+            $"{financerName} created a loan application for {customer.FullName} for {r.RequestedPrincipal:N2}.",
+            "LoanCreated",
+            nameof(LoanApplication),
+            x.Id,
+            actor,
+            ct
+        );
         Audit(
             actor,
             "LoanApplication.Created",
@@ -1500,6 +1547,19 @@ public sealed class PlatformService(
         };
         db.LoanApplications.Add(app);
         var loan = await DisburseAsync(app, new(r.Principal, r.StartDate, PaymentMode.Other, $"DIRECT-{app.ApplicationNumber}"), actor, ct, r);
+        var financerName = await db.Financers.AsNoTracking()
+            .Where(financer => financer.Id == customer.FinancerId)
+            .Select(financer => financer.DisplayName)
+            .SingleAsync(ct);
+        await NotifyPlatformAdminsAsync(
+            "New loan created",
+            $"{financerName} created loan {loan.LoanNumber} for {customer.FullName} for {r.Principal:N2}.",
+            "LoanCreated",
+            nameof(Loan),
+            loan.Id,
+            actor,
+            ct
+        );
         Audit(actor, "Loan.DirectCreated", nameof(Loan), loan.Id, null, new { loan.LoanNumber, loan.CustomerId, loan.Principal, loan.AnnualInterestRate });
         await db.SaveChangesAsync(ct);
         return Map(loan);

@@ -62,7 +62,18 @@ public sealed class LoanWorkflowTests
             MaximumFoirPercentage = 50,
             IsActive = true,
         };
-        db.AddRange(financer, customer, product);
+        var adminRole = new Role { Name = "SuperAdmin", IsSystem = true };
+        var admin = new UserAccount
+        {
+            EmployeeNumber = "ADM-LOAN",
+            FirstName = "Platform",
+            LastName = "Admin",
+            Email = "loan-admin@test.invalid",
+            Phone = "9000000000",
+            Status = AccountStatus.Active,
+        };
+        admin.UserRoles.Add(new UserRole { User = admin, Role = adminRole });
+        db.AddRange(financer, customer, product, adminRole, admin);
         await db.SaveChangesAsync();
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(
@@ -71,11 +82,17 @@ public sealed class LoanWorkflowTests
             .Build();
         var service = new PlatformService(db, new PasswordHasher<UserAccount>(), config);
         CurrentUser Actor(Guid id) => new(id, null, ["SuperAdmin"], []);
+        var financerActor = new CurrentUser(Guid.NewGuid(), financer.Id, ["FinancerOwner"], ["loans.create"]);
         var created = await service.CreateApplicationAsync(
             new(customer.Id, product.Id, 100000, 18, 12, "Business", 50000, 5000),
-            Actor(Guid.NewGuid()),
+            financerActor,
             default
         );
+        var applicationAlert = await db.Notifications.SingleAsync();
+        Assert.Equal(admin.Id, applicationAlert.UserId);
+        Assert.Equal("New loan application", applicationAlert.Title);
+        Assert.Equal(nameof(LoanApplication), applicationAlert.EntityType);
+        Assert.Equal(created.Id, applicationAlert.EntityId);
         var submitted = await service.TransitionApplicationAsync(
             created.Id,
             "submit",
@@ -133,5 +150,24 @@ public sealed class LoanWorkflowTests
                 default
             )
         );
+
+        var directLoan = await service.CreateDirectLoanAsync(
+            new DirectLoanRequest(
+                customer.Id,
+                product.Id,
+                75000,
+                18,
+                12,
+                DateOnly.FromDateTime(DateTime.UtcNow)
+            ),
+            financerActor,
+            default
+        );
+        var directLoanAlert = await db.Notifications
+            .OrderByDescending(notification => notification.CreatedAt)
+            .FirstAsync(notification => notification.EntityType == nameof(Loan));
+        Assert.Equal(admin.Id, directLoanAlert.UserId);
+        Assert.Equal("New loan created", directLoanAlert.Title);
+        Assert.Equal(directLoan.Id, directLoanAlert.EntityId);
     }
 }
