@@ -76,7 +76,7 @@ public sealed class AuthMessageSender(
         var (subject, body) = type switch
         {
             "Otp" => ("Your INRFS verification code", $"Your INRFS verification code is {Read(payload, "code")}. It expires soon."),
-            "PasswordReset" => ("Reset your INRFS password", $"Use this password reset token: {Read(payload, "token")}"),
+            "PasswordReset" => ("Reset your INRFS password", $"Open this secure link to reset your INRFS password: {BuildResetLink(payload)}\n\nThis link expires in 15 minutes. If you did not request it, you can ignore this email."),
             "WelcomeCredentials" => ("Welcome to INRFS", $"Your INRFS account is ready. User ID: {Read(payload, "userId")}. Temporary password: {Read(payload, "password")}"),
             _ => ("INRFS notification", JsonSerializer.Serialize(payload))
         };
@@ -102,4 +102,10 @@ public sealed class AuthMessageSender(
 
     private static string Read(object payload, string property) =>
         payload.GetType().GetProperty(property)?.GetValue(payload)?.ToString() ?? "";
+
+    private string BuildResetLink(object payload)
+    {
+        var separator = _options.PasswordResetUrl.Contains('?') ? "&" : "?";
+        return $"{_options.PasswordResetUrl}{separator}token={Uri.EscapeDataString(Read(payload, "token"))}";
+    }
 }
