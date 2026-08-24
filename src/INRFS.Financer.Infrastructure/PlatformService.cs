@@ -2448,6 +2448,7 @@ public sealed class PlatformService(
                 x.Loan.LoanNumber,
                 customer = x.Loan.Customer.FullName,
                 x.DueDate,
+                x.Status,
                 amount = x.PrincipalDue + x.InterestDue + x.FeesDue - x.AmountPaid,
             })
             .ToListAsync(ct);
