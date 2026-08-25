@@ -365,6 +365,7 @@ public sealed class Loan : Entity
     public decimal PrincipalOutstanding { get; set; }
     public decimal InterestOutstanding { get; set; }
     public decimal FeesOutstanding { get; set; }
+    public bool AdminCollectionMonitoring { get; set; }
     public List<PaymentSchedule> Schedules { get; set; } = [];
 }
 

@@ -80,7 +80,12 @@ public sealed class LoanWorkflowTests
                 new Dictionary<string, string?> { { "DataProtection:Key", "integration-data-key" } }
             )
             .Build();
-        var service = new PlatformService(db, new PasswordHasher<UserAccount>(), config);
+        var service = new PlatformService(
+            db,
+            new PasswordHasher<UserAccount>(),
+            config,
+            new TestAuthMessageSender()
+        );
         CurrentUser Actor(Guid id) => new(id, null, ["SuperAdmin"], []);
         var financerActor = new CurrentUser(Guid.NewGuid(), financer.Id, ["FinancerOwner"], ["loans.create"]);
         var created = await service.CreateApplicationAsync(

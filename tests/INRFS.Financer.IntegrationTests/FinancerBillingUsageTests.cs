@@ -16,7 +16,8 @@ public sealed class FinancerBillingUsageTests
         new PasswordHasher<UserAccount>(),
         new ConfigurationBuilder().AddInMemoryCollection(
             new Dictionary<string, string?> { ["DataProtection:Key"] = "integration-key" }
-        ).Build()
+        ).Build(),
+        new TestAuthMessageSender()
     );
 
     [Fact]

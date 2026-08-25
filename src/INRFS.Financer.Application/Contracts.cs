@@ -341,7 +341,8 @@ public sealed record DirectLoanRequest(
     LoanDurationUnit DurationUnit = LoanDurationUnit.Months,
     decimal? InterestRate = null,
     InterestRateBasis InterestRateBasis = InterestRateBasis.PerAnnum,
-    InterestCollectionFrequency InterestCollectionFrequency = InterestCollectionFrequency.Monthly
+    InterestCollectionFrequency InterestCollectionFrequency = InterestCollectionFrequency.Monthly,
+    bool AdminCollectionMonitoring = false
 );
 
 public sealed record LoanDto(
@@ -364,6 +365,7 @@ public sealed record LoanDto(
     , decimal InterestRate
     , InterestRateBasis InterestRateBasis
     , InterestCollectionFrequency InterestCollectionFrequency
+    , bool AdminCollectionMonitoring
 );
 
 public sealed record ScheduleDto(

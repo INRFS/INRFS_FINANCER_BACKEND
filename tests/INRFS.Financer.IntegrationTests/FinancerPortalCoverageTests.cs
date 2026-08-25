@@ -133,7 +133,8 @@ public sealed class FinancerPortalCoverageTests
                 .AddInMemoryCollection(
                     new Dictionary<string, string?> { ["DataProtection:Key"] = "integration-key" }
                 )
-                .Build()
+                .Build(),
+            sender
         );
         var actor = new CurrentUser(
             user.Id,

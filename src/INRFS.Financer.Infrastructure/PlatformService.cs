@@ -10,7 +10,8 @@ namespace INRFS.Financer.Infrastructure;
 public sealed class PlatformService(
     FinancerDbContext db,
     IPasswordHasher<UserAccount> passwordHasher,
-    IConfiguration configuration
+    IConfiguration configuration,
+    IAuthMessageSender messageSender
 ) : IPlatformService
 {
     private static int Page(PageQuery q) => Math.Max(1, q.Page);
@@ -473,6 +474,7 @@ public sealed class PlatformService(
             Email = email,
             Phone = r.Phone.Trim(),
             Status = AccountStatus.Active,
+            MfaRequired = true,
             CreatedBy = actor.UserId,
         };
         x.PasswordHash = passwordHasher.HashPassword(x, r.Password);
@@ -493,6 +495,11 @@ public sealed class PlatformService(
             }
         );
         await db.SaveChangesAsync(ct);
+        var isPlatformAdministrator =
+            !tenant.HasValue
+            && roles.Any(role => role.Name is "SuperAdmin" or "Admin");
+        if (isPlatformAdministrator)
+            await messageSender.SendWelcomeCredentialsAsync(x.Email, x.Email, r.Password, ct);
         return Map(x);
     }
 
@@ -1547,6 +1554,7 @@ public sealed class PlatformService(
         };
         db.LoanApplications.Add(app);
         var loan = await DisburseAsync(app, new(r.Principal, r.StartDate, PaymentMode.Other, $"DIRECT-{app.ApplicationNumber}"), actor, ct, r);
+        loan.AdminCollectionMonitoring = r.AdminCollectionMonitoring;
         var financerName = await db.Financers.AsNoTracking()
             .Where(financer => financer.Id == customer.FinancerId)
             .Select(financer => financer.DisplayName)
@@ -2256,6 +2264,8 @@ public sealed class PlatformService(
             .Include(x => x.Customer)
             .Include(x => x.Schedules)
             .Where(x => x.Status == LoanStatus.Active || x.Status == LoanStatus.Overdue);
+        if (IsPlatform(actor))
+            query = query.Where(x => x.AdminCollectionMonitoring);
         if (!IsPlatform(actor))
             query = query.Where(x => x.FinancerId == actor.FinancerId);
         if (q.FinancerId.HasValue)
@@ -3507,7 +3517,8 @@ public sealed class PlatformService(
             x.DurationUnit,
             x.InterestRate,
             x.InterestRateBasis,
-            x.InterestCollectionFrequency
+            x.InterestCollectionFrequency,
+            x.AdminCollectionMonitoring
         );
 
     private static PaymentDto Map(Payment x) =>

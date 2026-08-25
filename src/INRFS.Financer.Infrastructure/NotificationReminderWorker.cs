@@ -91,7 +91,7 @@ public sealed class NotificationReminderWorker(
             });
         }
 
-        var dueLoans = schedules.Where(x => x.DueDate <= upcomingThrough).GroupBy(x => x.LoanId).ToList();
+        var dueLoans = schedules.Where(x => x.DueDate <= upcomingThrough && x.Loan.AdminCollectionMonitoring).GroupBy(x => x.LoanId).ToList();
         var dueLoanIds = dueLoans.Select(x => x.Key).ToList();
         var existingCases = await db.CollectionCases.Include(x => x.Activities)
             .Where(x => dueLoanIds.Contains(x.LoanId)).ToDictionaryAsync(x => x.LoanId, ct);
