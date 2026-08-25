@@ -18,17 +18,7 @@ public sealed class PlatformService(
 
     private static int Size(PageQuery q) => Math.Clamp(q.PageSize, 1, 100);
 
-    private static bool IsPlatform(CurrentUser a) =>
-        a.FinancerId is null
-        || a.Roles.Any(x =>
-            x
-                is "SuperAdmin"
-                    or "Admin"
-                    or "Auditor"
-                    or "FinanceOfficer"
-                    or "ComplianceOfficer"
-                    or "SupportAgent"
-        );
+    private static bool IsPlatform(CurrentUser a) => a.FinancerId is null;
 
     private static void RequireTenant(Guid tenant, CurrentUser a)
     {
