@@ -40,6 +40,7 @@ public sealed class DatabaseInitializer(
             await db.Database.MigrateAsync(ct);
         if (await db.Roles.AnyAsync(ct))
         {
+            await EnsureDashboardAccessGrantsAsync(ct);
             await EnsureSeedFinancerAsync(ct);
             await db.SaveChangesAsync(ct);
             return;
@@ -259,6 +260,60 @@ public sealed class DatabaseInitializer(
         await db.SaveChangesAsync(ct);
         await EnsureSeedFinancerAsync(ct);
         await db.SaveChangesAsync(ct);
+    }
+
+    private async Task EnsureDashboardAccessGrantsAsync(CancellationToken ct)
+    {
+        var grants = new Dictionary<string, string[]>
+        {
+            ["dashboard.read"] =
+            [
+                "SuperAdmin", "Admin", "ComplianceOfficer", "FinanceOfficer", "FinancerOwner",
+                "FinancerManager", "LoanOfficer", "CollectionAgent", "SupportAgent", "Auditor",
+            ],
+            ["financers.read"] =
+            [
+                "SuperAdmin", "Admin", "ComplianceOfficer", "FinanceOfficer", "SupportAgent", "Auditor",
+            ],
+        };
+
+        var permissionNames = grants.Keys.ToArray();
+        var permissions = await db.Permissions
+            .Include(permission => permission.RolePermissions)
+            .Where(permission => permissionNames.Contains(permission.Name))
+            .ToDictionaryAsync(permission => permission.Name, ct);
+
+        foreach (var permissionName in permissionNames)
+        {
+            if (permissions.ContainsKey(permissionName))
+                continue;
+            var permission = new Permission
+            {
+                Name = permissionName,
+                Description = permissionName.Replace('.', ' '),
+            };
+            db.Permissions.Add(permission);
+            permissions[permissionName] = permission;
+        }
+
+        var roleNames = grants.Values.SelectMany(names => names).Distinct().ToArray();
+        var roles = await db.Roles
+            .Include(role => role.RolePermissions)
+            .Where(role => roleNames.Contains(role.Name))
+            .ToDictionaryAsync(role => role.Name, ct);
+
+        foreach (var (permissionName, grantedRoleNames) in grants)
+        {
+            var permission = permissions[permissionName];
+            foreach (var roleName in grantedRoleNames)
+            {
+                if (!roles.TryGetValue(roleName, out var role))
+                    continue;
+                if (role.RolePermissions.Any(grant => grant.PermissionId == permission.Id || grant.Permission == permission))
+                    continue;
+                role.RolePermissions.Add(new RolePermission { Role = role, Permission = permission });
+            }
+        }
     }
 
     private async Task EnsureSqliteSchemaCompatibilityAsync(CancellationToken ct)

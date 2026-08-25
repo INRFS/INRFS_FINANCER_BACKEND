@@ -31,6 +31,43 @@ public sealed class DatabaseInitializationTests
     }
 
     [Fact]
+    public async Task Existing_database_restores_dashboard_permissions_for_admin_roles()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<FinancerDbContext>().UseSqlite(connection).Options;
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Database:Initialize"] = "true",
+        }).Build();
+
+        await using (var seedDb = new FinancerDbContext(options))
+        {
+            var initializer = new DatabaseInitializer(seedDb, new PasswordHasher<UserAccount>(), configuration);
+            await initializer.InitializeAsync();
+            var affected = await seedDb.RolePermissions
+                .Where(grant => grant.Role.Name == "Admin" &&
+                    (grant.Permission.Name == "dashboard.read" || grant.Permission.Name == "financers.read"))
+                .ExecuteDeleteAsync();
+            Assert.Equal(2, affected);
+        }
+
+        await using (var upgradeDb = new FinancerDbContext(options))
+        {
+            var initializer = new DatabaseInitializer(upgradeDb, new PasswordHasher<UserAccount>(), configuration);
+            await initializer.InitializeAsync();
+        }
+
+        await using var verifyDb = new FinancerDbContext(options);
+        var restored = await verifyDb.RolePermissions
+            .Where(grant => grant.Role.Name == "Admin" &&
+                (grant.Permission.Name == "dashboard.read" || grant.Permission.Name == "financers.read"))
+            .Select(grant => grant.Permission.Name)
+            .ToListAsync();
+        Assert.Equal(["dashboard.read", "financers.read"], restored.OrderBy(name => name).ToArray());
+    }
+
+    [Fact]
     public async Task Existing_sqlite_database_adds_missing_profile_image_column()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
