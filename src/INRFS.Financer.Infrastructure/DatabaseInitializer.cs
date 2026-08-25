@@ -40,7 +40,7 @@ public sealed class DatabaseInitializer(
             await db.Database.MigrateAsync(ct);
         if (await db.Roles.AnyAsync(ct))
         {
-            await EnsureDashboardAccessGrantsAsync(ct);
+            await EnsurePlatformAccessGrantsAsync(ct);
             await EnsureSeedFinancerAsync(ct);
             await db.SaveChangesAsync(ct);
             return;
@@ -262,22 +262,44 @@ public sealed class DatabaseInitializer(
         await db.SaveChangesAsync(ct);
     }
 
-    private async Task EnsureDashboardAccessGrantsAsync(CancellationToken ct)
+    private async Task EnsurePlatformAccessGrantsAsync(CancellationToken ct)
     {
+        var permissionNames = new[]
+        {
+            "dashboard.read", "financers.read", "financers.manage", "users.manage", "roles.manage",
+            "customers.read", "customers.manage", "kyc.verify", "documents.verify", "products.manage",
+            "loans.read", "loans.create", "loans.verify", "loans.approve", "loans.disburse",
+            "payments.read", "payments.record", "payments.reverse", "collections.read", "collections.manage",
+            "notifications.manage", "support.read", "support.create", "support.manage", "reports.read",
+            "settings.read", "settings.manage", "audit.read",
+        };
         var grants = new Dictionary<string, string[]>
         {
-            ["dashboard.read"] =
+            ["SuperAdmin"] = permissionNames,
+            ["Admin"] = permissionNames.Where(name => name != "roles.manage").ToArray(),
+            ["ComplianceOfficer"] =
             [
-                "SuperAdmin", "Admin", "ComplianceOfficer", "FinanceOfficer", "FinancerOwner",
-                "FinancerManager", "LoanOfficer", "CollectionAgent", "SupportAgent", "Auditor",
+                "dashboard.read", "financers.read", "customers.read", "kyc.verify", "documents.verify",
+                "loans.read", "loans.verify", "reports.read", "audit.read",
             ],
-            ["financers.read"] =
+            ["FinanceOfficer"] =
             [
-                "SuperAdmin", "Admin", "ComplianceOfficer", "FinanceOfficer", "SupportAgent", "Auditor",
+                "dashboard.read", "financers.read", "customers.read", "loans.read", "loans.approve",
+                "loans.disburse", "payments.read", "payments.record", "payments.reverse", "collections.read",
+                "collections.manage", "reports.read", "settings.read", "audit.read",
+            ],
+            ["SupportAgent"] =
+            [
+                "dashboard.read", "financers.read", "customers.read", "loans.read", "payments.read",
+                "notifications.manage", "support.read", "support.create", "support.manage", "reports.read",
+            ],
+            ["Auditor"] =
+            [
+                "dashboard.read", "financers.read", "customers.read", "loans.read", "payments.read",
+                "collections.read", "reports.read", "settings.read", "audit.read",
             ],
         };
 
-        var permissionNames = grants.Keys.ToArray();
         var permissions = await db.Permissions
             .Include(permission => permission.RolePermissions)
             .Where(permission => permissionNames.Contains(permission.Name))
@@ -296,19 +318,19 @@ public sealed class DatabaseInitializer(
             permissions[permissionName] = permission;
         }
 
-        var roleNames = grants.Values.SelectMany(names => names).Distinct().ToArray();
+        var roleNames = grants.Keys.ToArray();
         var roles = await db.Roles
             .Include(role => role.RolePermissions)
             .Where(role => roleNames.Contains(role.Name))
             .ToDictionaryAsync(role => role.Name, ct);
 
-        foreach (var (permissionName, grantedRoleNames) in grants)
+        foreach (var (roleName, grantedPermissionNames) in grants)
         {
-            var permission = permissions[permissionName];
-            foreach (var roleName in grantedRoleNames)
+            if (!roles.TryGetValue(roleName, out var role))
+                continue;
+            foreach (var permissionName in grantedPermissionNames)
             {
-                if (!roles.TryGetValue(roleName, out var role))
-                    continue;
+                var permission = permissions[permissionName];
                 if (role.RolePermissions.Any(grant => grant.PermissionId == permission.Id || grant.Permission == permission))
                     continue;
                 role.RolePermissions.Add(new RolePermission { Role = role, Permission = permission });

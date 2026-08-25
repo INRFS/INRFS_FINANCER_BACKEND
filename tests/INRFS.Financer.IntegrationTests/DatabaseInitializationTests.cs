@@ -31,7 +31,7 @@ public sealed class DatabaseInitializationTests
     }
 
     [Fact]
-    public async Task Existing_database_restores_dashboard_permissions_for_admin_roles()
+    public async Task Existing_database_restores_platform_permissions_for_admin_roles()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -47,9 +47,10 @@ public sealed class DatabaseInitializationTests
             await initializer.InitializeAsync();
             var affected = await seedDb.RolePermissions
                 .Where(grant => grant.Role.Name == "Admin" &&
-                    (grant.Permission.Name == "dashboard.read" || grant.Permission.Name == "financers.read"))
+                    (grant.Permission.Name == "dashboard.read" || grant.Permission.Name == "financers.read" ||
+                     grant.Permission.Name == "reports.read" || grant.Permission.Name == "settings.manage"))
                 .ExecuteDeleteAsync();
-            Assert.Equal(2, affected);
+            Assert.Equal(4, affected);
         }
 
         await using (var upgradeDb = new FinancerDbContext(options))
@@ -61,10 +62,11 @@ public sealed class DatabaseInitializationTests
         await using var verifyDb = new FinancerDbContext(options);
         var restored = await verifyDb.RolePermissions
             .Where(grant => grant.Role.Name == "Admin" &&
-                (grant.Permission.Name == "dashboard.read" || grant.Permission.Name == "financers.read"))
+                (grant.Permission.Name == "dashboard.read" || grant.Permission.Name == "financers.read" ||
+                 grant.Permission.Name == "reports.read" || grant.Permission.Name == "settings.manage"))
             .Select(grant => grant.Permission.Name)
             .ToListAsync();
-        Assert.Equal(["dashboard.read", "financers.read"], restored.OrderBy(name => name).ToArray());
+        Assert.Equal(["dashboard.read", "financers.read", "reports.read", "settings.manage"], restored.OrderBy(name => name).ToArray());
     }
 
     [Fact]
