@@ -164,6 +164,50 @@ public sealed class FinancerPortalCoverageTests
     }
 
     [Fact]
+    public async Task Pending_registration_can_be_resumed_with_the_same_email()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<FinancerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new FinancerDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        db.Roles.Add(new Role { Name = "FinancerOwner", IsSystem = true });
+        await db.SaveChangesAsync();
+
+        var sender = new TestAuthMessageSender();
+        var service = new AuthService(
+            db,
+            Options.Create(new JwtOptions { Key = "integration-test-key-at-least-32-characters" }),
+            Options.Create(new OtpOptions { MinimumResendSeconds = 60 }),
+            new PasswordHasher<UserAccount>(),
+            sender
+        );
+        var request = new RegisterFinancerRequest(
+            "Suresh Patel", "Patel Finance", "+919876543210",
+            "suresh@example.com", "Ahmedabad", "Gujarat"
+        );
+
+        var first = await service.RegisterFinancerAsync(request, default);
+        var immediateRetry = await service.RegisterFinancerAsync(request, default);
+
+        Assert.Equal(first.ChallengeId, immediateRetry.ChallengeId);
+        Assert.Equal(1, await db.Users.CountAsync());
+        Assert.Equal(1, await db.Financers.CountAsync());
+        Assert.Equal(1, await db.OtpChallenges.CountAsync());
+
+        var changedMobile = await service.RegisterFinancerAsync(
+            request with { Mobile = "+919999999999" },
+            default
+        );
+        Assert.Equal(first.ChallengeId, changedMobile.ChallengeId);
+        var pendingUser = await db.Users.Include(x => x.Financer).SingleAsync();
+        Assert.Equal("+919999999999", pendingUser.Phone);
+        Assert.Equal("+919999999999", pendingUser.Financer!.Phone);
+    }
+
+    [Fact]
     public async Task Swagger_exposes_all_financer_UI_supporting_routes()
     {
         await using var factory = new ApiFactory();

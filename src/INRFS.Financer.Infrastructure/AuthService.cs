@@ -32,25 +32,52 @@ public sealed class AuthService(
     {
         var email = request.Email.Trim().ToLowerInvariant();
         var mobile = request.Mobile.Trim();
-        var existing = await db.Users.Include(x => x.Financer)
-            .FirstOrDefaultAsync(x => x.Email == email || x.Phone == mobile, ct);
+        var matches = await db.Users.Include(x => x.Financer)
+            .Where(x => x.Email == email || x.Phone == mobile)
+            .ToListAsync(ct);
+        var emailMatch = matches.FirstOrDefault(x => x.Email == email);
+        var mobileMatch = matches.FirstOrDefault(x => x.Phone == mobile);
+
+        if (emailMatch is not null && emailMatch.Status != AccountStatus.Pending)
+            throw new DomainException("An account with this email already exists.", 409);
+        if (mobileMatch is not null && mobileMatch.Status != AccountStatus.Pending)
+            throw new DomainException("An account with this mobile already exists.", 409);
+        if (emailMatch is not null && mobileMatch is not null && emailMatch.Id != mobileMatch.Id)
+            throw new DomainException("The email and mobile belong to different pending registrations.", 409);
+
+        // An unverified registration is resumable. This avoids permanently reserving an email
+        // when the user leaves the OTP screen, and also permits correcting the mobile number.
+        var existing = emailMatch ?? mobileMatch;
         if (existing is not null)
         {
-            if (existing.Status != AccountStatus.Pending || existing.Email != email || existing.Phone != mobile)
-                throw new DomainException("An account with this email or mobile already exists.", 409);
             var lastChallenge = await db.OtpChallenges.OrderByDescending(x => x.CreatedAt)
                 .FirstOrDefaultAsync(x => x.UserId == existing.Id && x.Purpose == "Registration", ct);
-            if (lastChallenge is not null && lastChallenge.CreatedAt.AddSeconds(_otp.MinimumResendSeconds) > DateTimeOffset.UtcNow)
-                throw new DomainException("Please wait before requesting another code.", 429);
 
             var existingName = request.FullName.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
             existing.FirstName = existingName[0];
             existing.LastName = existingName.Length > 1 ? existingName[1] : "";
+            existing.Email = email;
+            existing.Phone = mobile;
             existing.Financer!.LegalName = request.BusinessName.Trim();
             existing.Financer.DisplayName = request.BusinessName.Trim();
             existing.Financer.OwnerName = request.FullName.Trim();
+            existing.Financer.Email = email;
+            existing.Financer.Phone = mobile;
             existing.Financer.City = request.City.Trim();
             existing.Financer.State = request.State.Trim();
+
+            // Return the current challenge instead of failing when the form is submitted again
+            // immediately. A changed email requires a newly delivered code.
+            if (lastChallenge is not null
+                && lastChallenge.Destination == email
+                && lastChallenge.UsedAt is null
+                && lastChallenge.ExpiresAt > DateTimeOffset.UtcNow
+                && lastChallenge.CreatedAt.AddSeconds(_otp.MinimumResendSeconds) > DateTimeOffset.UtcNow)
+            {
+                await db.SaveChangesAsync(ct);
+                return new(lastChallenge.Id, Mask(email), lastChallenge.ExpiresAt);
+            }
+
             var retryChallenge = await CreateChallengeAsync(existing.Id, email, "Registration", ct);
             await db.SaveChangesAsync(ct);
             return retryChallenge;
