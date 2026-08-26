@@ -174,5 +174,29 @@ public sealed class LoanWorkflowTests
         Assert.Equal(admin.Id, directLoanAlert.UserId);
         Assert.Equal("New loan created", directLoanAlert.Title);
         Assert.Equal(directLoan.Id, directLoanAlert.EntityId);
+
+        var monthlyLoan = await service.CreateDirectLoanAsync(
+            new DirectLoanRequest(
+                customer.Id,
+                product.Id,
+                100000,
+                3,
+                3,
+                new DateOnly(2026, 1, 15),
+                DurationValue: 3,
+                DurationUnit: LoanDurationUnit.Months,
+                InterestRate: 3,
+                InterestRateBasis: InterestRateBasis.PerMonth,
+                InterestCollectionFrequency: InterestCollectionFrequency.Monthly
+            ),
+            financerActor,
+            default
+        );
+        var savedMonthlyLoan = await db.Loans
+            .Include(item => item.Schedules)
+            .SingleAsync(item => item.Id == monthlyLoan.Id);
+        Assert.Equal(3, savedMonthlyLoan.Schedules.Count);
+        Assert.All(savedMonthlyLoan.Schedules, schedule => Assert.Equal(3000m, schedule.InterestDue));
+        Assert.Equal(9000m, savedMonthlyLoan.InterestOutstanding);
     }
 }

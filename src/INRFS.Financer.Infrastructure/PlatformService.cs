@@ -3579,17 +3579,25 @@ public sealed class PlatformService(
             for (var period = 1; request.StartDate.AddMonths(period) < maturity; period++) dueDates.Add(request.StartDate.AddMonths(period));
         if (dueDates.Count == 0 || dueDates[^1] != maturity) dueDates.Add(maturity);
 
-        var totalDays = maturity.DayNumber - request.StartDate.DayNumber;
-        var totalInterest = Math.Round(loan.Principal * annualRate / 100m * totalDays / 365m, 2);
-        var allocatedInterest = 0m;
         var periodStart = request.StartDate;
         for (var i = 0; i < dueDates.Count; i++)
         {
             var due = dueDates[i];
             var days = due.DayNumber - periodStart.DayNumber;
-            var interest = i == dueDates.Count - 1
-                ? totalInterest - allocatedInterest
-                : Math.Round(loan.Principal * annualRate / 100m * days / 365m, 2);
+            var interest = request.InterestRateBasis switch
+            {
+                // A complete calendar month always earns exactly the entered monthly rate,
+                // regardless of whether that month contains 28, 29, 30 or 31 days.
+                InterestRateBasis.PerMonth when due == periodStart.AddMonths(1) =>
+                    Math.Round(loan.Principal * enteredRate / 100m, 2),
+                InterestRateBasis.PerMonth =>
+                    Math.Round(loan.Principal * enteredRate / 100m * days / 30m, 2),
+                InterestRateBasis.PerWeek =>
+                    Math.Round(loan.Principal * enteredRate / 100m * days / 7m, 2),
+                InterestRateBasis.PerDay =>
+                    Math.Round(loan.Principal * enteredRate / 100m * days, 2),
+                _ => Math.Round(loan.Principal * enteredRate / 100m * days / 365m, 2),
+            };
             loan.Schedules.Add(new PaymentSchedule
             {
                 InstallmentNumber = i + 1, PeriodStart = periodStart, PeriodEnd = due,
@@ -3597,10 +3605,9 @@ public sealed class PlatformService(
                 InterestDue = interest, PrincipalDue = i == dueDates.Count - 1 ? loan.Principal : 0,
                 Status = ScheduleStatus.Upcoming, CreatedBy = actorId,
             });
-            allocatedInterest += interest;
             periodStart = due;
         }
-        loan.InterestOutstanding = totalInterest;
+        loan.InterestOutstanding = loan.Schedules.Sum(schedule => schedule.InterestDue);
     }
 
     private static SettlementQuoteDto BuildSettlementQuote(Loan loan, DateOnly settlementDate)
