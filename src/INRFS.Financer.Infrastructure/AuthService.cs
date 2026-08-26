@@ -31,7 +31,11 @@ public sealed class AuthService(
     )
     {
         var email = request.Email.Trim().ToLowerInvariant();
-        var mobile = request.Mobile.Trim();
+        var mobileDigits = System.Text.RegularExpressions.Regex.Replace(request.Mobile, "[^0-9]", string.Empty);
+        var nationalMobile = mobileDigits.Length == 12 && mobileDigits.StartsWith("91", StringComparison.Ordinal)
+            ? mobileDigits[2..]
+            : mobileDigits;
+        var mobile = $"+91{nationalMobile}";
         var matches = await db.Users.Include(x => x.Financer)
             .Where(x => x.Email == email || x.Phone == mobile)
             .ToListAsync(ct);
@@ -163,11 +167,16 @@ public sealed class AuthService(
     )
     {
         var identifier = request.Email.Trim().ToLowerInvariant();
+        var identifierDigits = System.Text.RegularExpressions.Regex.Replace(identifier, "[^0-9]", string.Empty);
+        var nationalPhone = identifierDigits.Length == 12 && identifierDigits.StartsWith("91", StringComparison.Ordinal)
+            ? identifierDigits[2..]
+            : identifierDigits;
+        var normalizedPhone = $"+91{nationalPhone}";
         var user =
             await db
                 .Users.Include(x => x.Financer)
                 .SingleOrDefaultAsync(
-                    x => x.Email == identifier || x.Phone == request.Email.Trim(),
+                    x => x.Email == identifier || x.Phone == normalizedPhone || x.Phone == nationalPhone,
                     ct
                 )
             ?? throw new DomainException("Invalid credentials.", 401);

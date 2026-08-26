@@ -16,7 +16,7 @@ public sealed class LoginValidator : AbstractValidator<LoginRequest>
                 )
             )
             .WithMessage("Enter a valid email address or mobile number.");
-        RuleFor(x => x.Password).NotEmpty();
+        RuleFor(x => x.Password).NotEmpty().MaximumLength(128);
         RuleFor(x => x.Portal).Must(x => x is "admin" or "financer");
     }
 }
@@ -25,12 +25,19 @@ public sealed class RegisterFinancerValidator : AbstractValidator<RegisterFinanc
 {
     public RegisterFinancerValidator()
     {
-        RuleFor(x => x.FullName).NotEmpty().MaximumLength(160);
-        RuleFor(x => x.BusinessName).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Mobile).Matches("^[+0-9 ()-]{8,24}$");
-        RuleFor(x => x.Email).NotEmpty().EmailAddress();
-        RuleFor(x => x.City).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.State).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.FullName).NotEmpty().MinimumLength(2).MaximumLength(100)
+            .Matches("^[^0-9]+$").WithMessage("Full name must not contain numbers.");
+        RuleFor(x => x.BusinessName).NotEmpty().MinimumLength(2).MaximumLength(200);
+        RuleFor(x => x.Mobile).Must(value =>
+            System.Text.RegularExpressions.Regex.IsMatch(
+                System.Text.RegularExpressions.Regex.Replace(value ?? string.Empty, "[^0-9]", string.Empty),
+                "^(91)?[6-9][0-9]{9}$"))
+            .WithMessage("Enter a valid 10-digit Indian mobile number.");
+        RuleFor(x => x.Email).NotEmpty().MaximumLength(254).EmailAddress();
+        RuleFor(x => x.City).NotEmpty().MinimumLength(2).MaximumLength(100)
+            .Matches("^[^0-9]+$").WithMessage("City must not contain numbers.");
+        RuleFor(x => x.State).NotEmpty().MinimumLength(2).MaximumLength(100)
+            .Matches("^[^0-9]+$").WithMessage("State must not contain numbers.");
     }
 }
 
