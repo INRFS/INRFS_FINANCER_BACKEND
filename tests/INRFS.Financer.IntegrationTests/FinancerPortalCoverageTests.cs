@@ -28,13 +28,26 @@ public sealed class FinancerPortalCoverageTests
         var admin = new UserAccount
         {
             Email = "admin@local.test",
+            EmployeeNumber = "ADM-TEST-001",
             FirstName = "Bootstrap",
             LastName = "Admin",
             Status = AccountStatus.Active,
         };
         admin.PasswordHash = new PasswordHasher<UserAccount>().HashPassword(admin, "StrongLocalPassword123!");
         admin.UserRoles.Add(new UserRole { User = admin, Role = role });
-        db.AddRange(role, admin);
+        var unrelatedUserWithoutPhone = new UserAccount
+        {
+            Email = "another-user@local.test",
+            EmployeeNumber = "USR-TEST-001",
+            FirstName = "Another",
+            LastName = "User",
+            Status = AccountStatus.Active,
+        };
+        unrelatedUserWithoutPhone.PasswordHash = new PasswordHasher<UserAccount>().HashPassword(
+            unrelatedUserWithoutPhone,
+            "AnotherStrongPassword123!"
+        );
+        db.AddRange(role, admin, unrelatedUserWithoutPhone);
         await db.SaveChangesAsync();
 
         var sender = new TestAuthMessageSender();

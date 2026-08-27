@@ -167,19 +167,26 @@ public sealed class AuthService(
     )
     {
         var identifier = request.Email.Trim().ToLowerInvariant();
-        var identifierDigits = System.Text.RegularExpressions.Regex.Replace(identifier, "[^0-9]", string.Empty);
-        var nationalPhone = identifierDigits.Length == 12 && identifierDigits.StartsWith("91", StringComparison.Ordinal)
-            ? identifierDigits[2..]
-            : identifierDigits;
-        var normalizedPhone = $"+91{nationalPhone}";
-        var user =
-            await db
-                .Users.Include(x => x.Financer)
-                .SingleOrDefaultAsync(
-                    x => x.Email == identifier || x.Phone == normalizedPhone || x.Phone == nationalPhone,
-                    ct
-                )
-            ?? throw new DomainException("Invalid credentials.", 401);
+        var users = db.Users.Include(x => x.Financer).AsQueryable();
+        UserAccount? user;
+        if (identifier.Contains('@'))
+        {
+            user = await users.SingleOrDefaultAsync(x => x.Email == identifier, ct);
+        }
+        else
+        {
+            var identifierDigits = System.Text.RegularExpressions.Regex.Replace(identifier, "[^0-9]", string.Empty);
+            var nationalPhone = identifierDigits.Length == 12 && identifierDigits.StartsWith("91", StringComparison.Ordinal)
+                ? identifierDigits[2..]
+                : identifierDigits;
+            var normalizedPhone = $"+91{nationalPhone}";
+            user = await users.SingleOrDefaultAsync(
+                x => x.Phone == normalizedPhone || x.Phone == nationalPhone,
+                ct
+            );
+        }
+        if (user is null)
+            throw new DomainException("Invalid credentials.", 401);
         if (user.LockedUntil > DateTimeOffset.UtcNow || user.Status != AccountStatus.Active)
             throw new DomainException("Account is not available.", 403);
         var result = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
