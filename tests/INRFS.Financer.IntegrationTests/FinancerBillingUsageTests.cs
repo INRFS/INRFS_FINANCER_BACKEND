@@ -249,6 +249,84 @@ public sealed class FinancerBillingUsageTests
     }
 
     [Fact]
+    public async Task Invoice_generation_honors_override_status_and_effective_date()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<FinancerDbContext>().UseSqlite(connection).Options;
+        await using var db = new FinancerDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var financer = new FinancerOrganization
+        {
+            DisplayName = "Configured Finance",
+            Status = AccountStatus.Active,
+            ServiceChargePercentage = 2,
+        };
+        var customer = new Customer { Financer = financer, FullName = "Configured Customer" };
+        var product = new LoanProduct { Name = "Configured Product", Code = "CONFIG" };
+        var application = new LoanApplication { FinancerId = financer.Id, Customer = customer, LoanProduct = product };
+        var loan = new Loan
+        {
+            FinancerId = financer.Id,
+            Customer = customer,
+            LoanApplicationId = application.Id,
+            LoanProduct = product,
+            LoanNumber = "LN-CONFIG",
+            Status = LoanStatus.Closed,
+        };
+        db.AddRange(financer, customer, product, application, loan);
+        db.Settings.AddRange(
+            new PlatformSetting { Scope = "Platform", Key = "ServiceChargePercentage", Value = "1", ValueType = "number" },
+            new PlatformSetting { Scope = $"Financer:{financer.Id}", Key = "ServiceChargePercentage", Value = "5", ValueType = "number" },
+            new PlatformSetting { Scope = $"Financer:{financer.Id}", Key = "ServiceChargeEffectiveDate", Value = "2026-10-01", ValueType = "date" },
+            new PlatformSetting { Scope = $"Financer:{financer.Id}", Key = "ServiceChargeConfigurationStatus", Value = "Active", ValueType = "string" }
+        );
+        db.Payments.Add(new Payment
+        {
+            FinancerId = financer.Id,
+            Loan = loan,
+            PaymentNumber = "PAY-CONFIG",
+            Amount = 1_000,
+            InterestAmount = 1_000,
+            ReceivedAt = new DateTimeOffset(2026, 9, 15, 0, 0, 0, TimeSpan.Zero),
+            Status = PaymentStatus.Completed,
+        });
+        await db.SaveChangesAsync();
+        var service = CreateService(db);
+        var actor = new CurrentUser(Guid.NewGuid(), null, ["SuperAdmin"], []);
+
+        var beforeEffectiveDate = await service.GenerateInvoiceAsync(
+            new GenerateInvoiceRequest(financer.Id, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), new DateOnly(2026, 10, 10)),
+            actor,
+            default
+        );
+        Assert.Equal(1m, beforeEffectiveDate.ChargePercentage);
+        Assert.Equal(10m, beforeEffectiveDate.ChargeAmount);
+
+        var effectiveSetting = await db.Settings.SingleAsync(x => x.Key == "ServiceChargeEffectiveDate");
+        effectiveSetting.Value = "2026-09-01";
+        await db.SaveChangesAsync();
+        var activeOverride = await service.GenerateInvoiceAsync(
+            new GenerateInvoiceRequest(financer.Id, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), new DateOnly(2026, 10, 10)),
+            actor,
+            default
+        );
+        Assert.Equal(5m, activeOverride.ChargePercentage);
+        Assert.Equal(50m, activeOverride.ChargeAmount);
+
+        var statusSetting = await db.Settings.SingleAsync(x => x.Key == "ServiceChargeConfigurationStatus");
+        statusSetting.Value = "Inactive";
+        await db.SaveChangesAsync();
+        var inactiveOverride = await service.GenerateInvoiceAsync(
+            new GenerateInvoiceRequest(financer.Id, new DateOnly(2026, 9, 1), new DateOnly(2026, 9, 30), new DateOnly(2026, 10, 10)),
+            actor,
+            default
+        );
+        Assert.Equal(1m, inactiveOverride.ChargePercentage);
+        Assert.Equal(10m, inactiveOverride.ChargeAmount);
+    }
+
+    [Fact]
     public void Due_schedules_and_partially_paid_invoices_transition_to_overdue()
     {
         var loan = new Loan { Status = LoanStatus.Active };

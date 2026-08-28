@@ -3026,10 +3026,25 @@ public sealed class PlatformService(
             x => x.Scope == $"Financer:{r.FinancerId}" && x.Key == "ServiceChargePercentage",
             ct
         );
-        var percentage = decimal.TryParse(financerOverride?.Value, out var overridePercentage)
-            ? overridePercentage
-            : financer.ServiceChargePercentage
-                ?? (decimal.TryParse(platformDefault?.Value, out var p) ? p : 1);
+        var overrideStatus = await db.Settings.AsNoTracking().SingleOrDefaultAsync(
+            x => x.Scope == $"Financer:{r.FinancerId}" && x.Key == "ServiceChargeConfigurationStatus",
+            ct
+        );
+        var overrideEffectiveDate = await db.Settings.AsNoTracking().SingleOrDefaultAsync(
+            x => x.Scope == $"Financer:{r.FinancerId}" && x.Key == "ServiceChargeEffectiveDate",
+            ct
+        );
+        var platformPercentage = decimal.TryParse(platformDefault?.Value, out var p) ? p : 1;
+        var overrideIsActive = !string.Equals(overrideStatus?.Value, "Inactive", StringComparison.OrdinalIgnoreCase);
+        var overrideIsEffective = !DateOnly.TryParse(overrideEffectiveDate?.Value, out var effectiveDate)
+            || effectiveDate <= r.PeriodEnd;
+        var percentage = overrideIsActive
+            && overrideIsEffective
+            && decimal.TryParse(financerOverride?.Value, out var overridePercentage)
+                ? overridePercentage
+                : overrideStatus is not null || overrideEffectiveDate is not null
+                    ? platformPercentage
+                    : financer.ServiceChargePercentage ?? platformPercentage;
         var mutableInvoice = existingInvoices.LastOrDefault(x => x.CollectedAmount == 0);
         var lockedInterest = existingInvoices
             .Where(x => x.Id != mutableInvoice?.Id)
@@ -3579,25 +3594,40 @@ public sealed class PlatformService(
             for (var period = 1; request.StartDate.AddMonths(period) < maturity; period++) dueDates.Add(request.StartDate.AddMonths(period));
         if (dueDates.Count == 0 || dueDates[^1] != maturity) dueDates.Add(maturity);
 
+        decimal MonthlyInterestAccruedThrough(DateOnly date)
+        {
+            var completeMonths = 0;
+            var monthStart = request.StartDate;
+            while (request.StartDate.AddMonths(completeMonths + 1) <= date)
+            {
+                completeMonths++;
+                monthStart = request.StartDate.AddMonths(completeMonths);
+            }
+            var remainingDays = date.DayNumber - monthStart.DayNumber;
+            return Math.Round(
+                loan.Principal * enteredRate / 100m * (completeMonths + remainingDays / 30m),
+                2
+            );
+        }
+
         var periodStart = request.StartDate;
+        var monthlyInterestAssigned = 0m;
         for (var i = 0; i < dueDates.Count; i++)
         {
             var due = dueDates[i];
             var days = due.DayNumber - periodStart.DayNumber;
             var interest = request.InterestRateBasis switch
             {
-                // A complete calendar month always earns exactly the entered monthly rate,
-                // regardless of whether that month contains 28, 29, 30 or 31 days.
-                InterestRateBasis.PerMonth when due == periodStart.AddMonths(1) =>
-                    Math.Round(loan.Principal * enteredRate / 100m, 2),
                 InterestRateBasis.PerMonth =>
-                    Math.Round(loan.Principal * enteredRate / 100m * days / 30m, 2),
+                    MonthlyInterestAccruedThrough(due) - monthlyInterestAssigned,
                 InterestRateBasis.PerWeek =>
                     Math.Round(loan.Principal * enteredRate / 100m * days / 7m, 2),
                 InterestRateBasis.PerDay =>
                     Math.Round(loan.Principal * enteredRate / 100m * days, 2),
                 _ => Math.Round(loan.Principal * enteredRate / 100m * days / 365m, 2),
             };
+            if (request.InterestRateBasis == InterestRateBasis.PerMonth)
+                monthlyInterestAssigned += interest;
             loan.Schedules.Add(new PaymentSchedule
             {
                 InstallmentNumber = i + 1, PeriodStart = periodStart, PeriodEnd = due,
