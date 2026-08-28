@@ -2255,7 +2255,13 @@ public sealed class PlatformService(
             .Include(x => x.Schedules)
             .Where(x => x.Status == LoanStatus.Active || x.Status == LoanStatus.Overdue);
         if (IsPlatform(actor))
-            query = query.Where(x => x.AdminCollectionMonitoring);
+            query = query.Where(x =>
+                x.AdminCollectionMonitoring
+                || x.Schedules.Any(s =>
+                    s.DueDate <= queueThrough
+                    && s.Status != ScheduleStatus.Paid
+                )
+            );
         if (!IsPlatform(actor))
             query = query.Where(x => x.FinancerId == actor.FinancerId);
         if (q.FinancerId.HasValue)
