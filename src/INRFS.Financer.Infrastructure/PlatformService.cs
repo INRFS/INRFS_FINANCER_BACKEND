@@ -2284,6 +2284,15 @@ public sealed class PlatformService(
                 cases.TryGetValue(x.Id, out var collectionCase);
                 var dueSchedule = x.Schedules.Where(s => s.DueDate <= queueThrough && s.Status != ScheduleStatus.Paid)
                     .OrderBy(s => s.DueDate).ThenBy(s => s.InstallmentNumber).FirstOrDefault();
+                // Explicitly monitored loans belong in the admin work queue from
+                // creation, even when their first due date is beyond the normal
+                // reminder window.
+                dueSchedule ??= x.AdminCollectionMonitoring
+                    ? x.Schedules.Where(s => s.Status != ScheduleStatus.Paid)
+                        .OrderBy(s => s.DueDate).ThenBy(s => s.InstallmentNumber).FirstOrDefault()
+                    : null;
+                var queueDue = x.Schedules.Where(s => s.DueDate <= queueThrough && s.Status != ScheduleStatus.Paid)
+                    .Sum(s => s.PrincipalDue + s.InterestDue + s.FeesDue - s.AmountPaid);
                 return new
                 {
                 x.Id,
@@ -2294,13 +2303,10 @@ public sealed class PlatformService(
                 x.FinancerId,
                 Financer = financerNames.GetValueOrDefault(x.FinancerId),
                 PaymentScheduleId = dueSchedule?.Id,
-                DueDate = x
-                    .Schedules.Where(s => s.DueDate <= queueThrough && s.Status != ScheduleStatus.Paid)
-                    .Select(s => (DateOnly?)s.DueDate)
-                    .Min(),
-                Due = x
-                    .Schedules.Where(s => s.DueDate <= queueThrough && s.Status != ScheduleStatus.Paid)
-                    .Sum(s => s.PrincipalDue + s.InterestDue + s.FeesDue - s.AmountPaid),
+                DueDate = (DateOnly?)dueSchedule?.DueDate,
+                Due = queueDue > 0
+                    ? queueDue
+                    : dueSchedule == null ? 0 : dueSchedule.PrincipalDue + dueSchedule.InterestDue + dueSchedule.FeesDue - dueSchedule.AmountPaid,
                 DueNow = x
                     .Schedules.Where(s => s.DueDate <= today && s.Status != ScheduleStatus.Paid)
                     .Sum(s => s.PrincipalDue + s.InterestDue + s.FeesDue - s.AmountPaid),
@@ -2319,6 +2325,7 @@ public sealed class PlatformService(
                 DaysUntilDue = dueSchedule is not null && dueSchedule.DueDate > today ? dueSchedule.DueDate.DayNumber - today.DayNumber : 0,
                 x.PrincipalOutstanding,
                 x.InterestOutstanding,
+                x.AdminCollectionMonitoring,
                 Status = x.Status,
                 CaseId = collectionCase?.Id,
                 CaseStatus = collectionCase?.Status.ToString(),
@@ -2331,7 +2338,7 @@ public sealed class PlatformService(
                     { a.Id, a.Type, a.Notes, a.OccurredAt, a.CreatedBy }).ToList() ?? [],
                 };
             })
-            .Where(x => x.Due > 0)
+            .Where(x => x.AdminCollectionMonitoring || x.Due > 0)
             .OrderByDescending(x => x.DaysPastDue)
             .ToList();
         return new PagedResult<object>(
